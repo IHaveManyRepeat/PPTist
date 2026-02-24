@@ -12,6 +12,7 @@ import message from '@/utils/message'
 import { getSvgPathRange } from '@/utils/svgPathParser'
 import type {
   Slide,
+  SlideTheme,
   TableCellStyle,
   TableCell,
   ChartType,
@@ -24,6 +25,43 @@ import type {
   ChartOptions,
   Gradient,
 } from '@/types/slides'
+
+// JSON 导入数据结构（支持两种格式）
+interface ImportJSONData {
+  title?: string
+  width?: number        // 旧格式（当前导出格式）
+  height?: number       // 旧格式
+  size?: {              // 新格式
+    width: number
+    height: number
+  }
+  slides: Slide[]
+  theme?: SlideTheme
+}
+
+/**
+ * 从 JSON 数据中解析画布尺寸
+ * 支持两种格式：
+ * 1. size: { width, height } - 新格式（优先）
+ * 2. width, height - 旧格式（兼容现有导出）
+ */
+const parseViewportSize = (data: ImportJSONData): { width: number; height: number } | null => {
+  // 优先使用 size 字段（新格式）
+  if (data.size?.width && data.size?.height) {
+    return {
+      width: data.size.width,
+      height: data.size.height,
+    }
+  }
+  // 兼容旧格式
+  if (data.width && data.height) {
+    return {
+      width: data.width,
+      height: data.height,
+    }
+  }
+  return null
+}
 
 const shapeVAlignMap: Record<string, ShapeTextAlign> = {
   'mid': 'middle',
@@ -162,7 +200,19 @@ export default () => {
     const reader = new FileReader()
     reader.addEventListener('load', () => {
       try {
-        const { slides, theme } = JSON.parse(reader.result as string)
+        const data: ImportJSONData = JSON.parse(reader.result as string)
+        const { slides, theme } = data
+
+        // 解析画布尺寸
+        const viewportSize = parseViewportSize(data)
+
+        // 覆盖导入或空幻灯片导入时设置画布尺寸
+        const shouldSetViewport = (cover || isEmptySlide.value) && viewportSize
+        if (shouldSetViewport) {
+          slidesStore.setViewportSize(viewportSize.width)
+          slidesStore.setViewportRatio(viewportSize.height / viewportSize.width)
+        }
+
         if (cover) {
           slidesStore.updateSlideIndex(0)
           slidesStore.setSlides(slides, (theme || {}))
@@ -188,7 +238,19 @@ export default () => {
     const reader = new FileReader()
     reader.addEventListener('load', () => {
       try {
-        const { slides, theme } = JSON.parse(decrypt(reader.result as string))
+        const data: ImportJSONData = JSON.parse(decrypt(reader.result as string))
+        const { slides, theme } = data
+
+        // 解析画布尺寸
+        const viewportSize = parseViewportSize(data)
+
+        // 覆盖导入或空幻灯片导入时设置画布尺寸
+        const shouldSetViewport = (cover || isEmptySlide.value) && viewportSize
+        if (shouldSetViewport) {
+          slidesStore.setViewportSize(viewportSize.width)
+          slidesStore.setViewportRatio(viewportSize.height / viewportSize.width)
+        }
+
         if (cover) {
           slidesStore.updateSlideIndex(0)
           slidesStore.setSlides(slides, (theme || {}))
@@ -1037,6 +1099,7 @@ export default () => {
       else addSlidesFromData(slides)
 
       exporting.value = false
+      console.log('importPPTXFile', json, slides)
     }
     reader.readAsArrayBuffer(file)
   }
